@@ -54,23 +54,22 @@ func (app *AppShell) Run() error {
 	app.isProduction = false
 	buildImageDone := make(chan bool)
 	buildJavascriptDone := make(chan bool)
-	buildStylesDone := make(chan bool)
 	buildBinaryDone := make(chan bool)
+	buildStyleDone := make(chan bool)
 
 	go func() {
 		err := app.buildImages("")
 		if app.curError == nil  && err != nil {
 			app.curError = err
 		}
-		buildImageDone <- true
-	}()
-	go func() {
-		err := app.buildStyles("")
-		if app.curError == nil && err != nil {
+		err = app.genAssetsMapping()
+		if app.curError == nil  && err != nil {
 			app.curError = err
 		}
-		buildStylesDone <- true
+		buildImageDone <- true
 	}()
+	<- buildImageDone
+
 	go func() {
 		app.clearJavaScriptsAssets()
 		err := app.buildJavaScripts(APP_SHELL_JS_TASK_INIT_ENTRY_KEY)
@@ -86,9 +85,15 @@ func (app *AppShell) Run() error {
 		}
 		buildBinaryDone <- true
 	}()
+	go func() {
+		err := app.buildStyles("")
+		if app.curError == nil && err != nil {
+			app.curError = err
+		}
+		buildStyleDone <- true
+	}()
 
-	<- buildImageDone
-	<- buildStylesDone
+	<- buildStyleDone
 	<- buildJavascriptDone
 	<- buildBinaryDone
 
@@ -257,6 +262,7 @@ func (app *AppShell) startRunner() {
 		case kTaskBuildBinary:
 			app.curError = app.buildBinary()
 		case kTaskBinaryRestart:
+			loggers.Info("Binary Restart!")
 			if app.curError == nil {
 				if err := app.kill(); err != nil {
 					loggers.Error("App cannot be killed, maybe you should restart the gobuildweb: %v", err)
@@ -426,7 +432,7 @@ func (app *AppShell) buildJavaScripts(entry string) error {
 	return assets.JavaScript(*rootConfig.Assets, entry).Build(app.isProduction)
 }
 
-func (app *AppShell) genAssetsMapping() error {
+func (app *AppShell) genAssetsMapping() (err error) {
 	rootConfig.RLock()
 	defer rootConfig.RUnlock()
 	if rootConfig.Assets == nil {
@@ -531,7 +537,7 @@ func NewAppShell(args []string) *AppShell {
 		taskChan: make(chan AppShellTask,2),
 		buildGuard: &sync.Mutex{},
 	}
-	app.interruptProcess()
+	//app.interruptProcess()
 	return app
 }
 
